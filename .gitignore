@@ -70,3 +70,7 @@ cover/
 # Neo4j local data if run outside of docker volume
 data/
 logs/
+
+# Scratch and mock debug files
+scratch/
+
