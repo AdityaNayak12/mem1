@@ -1,4 +1,4 @@
-from app.validation.models import ValidationResult, IssueLevel
+from app.validation.structural.models import ValidationResult, IssueLevel
 
 
 def format_report(result: ValidationResult) -> str:

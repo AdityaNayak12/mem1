@@ -1,6 +1,6 @@
 from app.schemas.memory_ir import MemoryIR
-from app.validation.models import ValidationResult, IssueLevel
-from app.validation.rules import (
+from app.validation.structural.models import ValidationResult, IssueLevel
+from app.validation.structural.rules import (
     validate_entities,
     validate_relationships,
     validate_events,

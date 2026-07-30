@@ -3,8 +3,7 @@ from datetime import datetime
 import pytest
 
 from app.schemas.memory_ir import MemoryIR, Entity, Relationship, Event, Evidence
-from app.validation import StructuralValidator, IssueLevel
-from app.validation.report import format_report
+from app.validation import StructuralValidator, IssueLevel, format_report
 
 
 @pytest.fixture

@@ -1,5 +1,5 @@
 from app.schemas.memory_ir import MemoryIR
-from app.validation.models import ValidationIssue, IssueLevel
+from app.validation.structural.models import ValidationIssue, IssueLevel
 
 
 def validate_entities(memory: MemoryIR) -> list[ValidationIssue]:
