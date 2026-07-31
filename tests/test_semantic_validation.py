@@ -42,7 +42,14 @@ def empty_memory():
 @pytest.mark.asyncio
 async def test_valid_memory(validator, mock_reviewer, empty_memory):
     # Setup mock to return a review with no findings
-    mock_reviewer.review_mock.return_value = SemanticReview(findings=[])
+    mock_reviewer.review_mock.return_value = SemanticReview(
+        findings=[],
+        extraction_quality=1.0,
+        grounded_memories=0,
+        unsupported_memories=0,
+        missing_memories=0,
+        reviewer_summary="OK"
+    )
 
     result = await validator.validate("User: Hello", empty_memory)
 
@@ -62,7 +69,12 @@ async def test_unsupported_entity(validator, mock_reviewer, empty_memory):
                 explanation="Entity not mentioned.",
                 recommendation="Remove entity."
             )
-        ]
+        ],
+        extraction_quality=0.8,
+        grounded_memories=4,
+        unsupported_memories=1,
+        missing_memories=0,
+        reviewer_summary="Missing one entity context."
     )
 
     result = await validator.validate("User: Hello", empty_memory)
@@ -88,7 +100,12 @@ async def test_unsupported_relationship(validator, mock_reviewer, empty_memory):
                 explanation="Relationship not direct.",
                 recommendation="Fix predicate."
             )
-        ]
+        ],
+        extraction_quality=0.8,
+        grounded_memories=4,
+        unsupported_memories=1,
+        missing_memories=0,
+        reviewer_summary="Unsupported relationship found."
     )
 
     result = await validator.validate("User: Hello", empty_memory)
@@ -112,7 +129,12 @@ async def test_unsupported_event(validator, mock_reviewer, empty_memory):
                 explanation="No such event.",
                 recommendation="Remove event."
             )
-        ]
+        ],
+        extraction_quality=0.8,
+        grounded_memories=4,
+        unsupported_memories=1,
+        missing_memories=0,
+        reviewer_summary="Unsupported event found."
     )
 
     result = await validator.validate("User: Hello", empty_memory)
@@ -136,7 +158,12 @@ async def test_hallucination(validator, mock_reviewer, empty_memory):
                 explanation="Invented info.",
                 recommendation="Remove hallucinated properties."
             )
-        ]
+        ],
+        extraction_quality=0.8,
+        grounded_memories=4,
+        unsupported_memories=1,
+        missing_memories=0,
+        reviewer_summary="Hallucination detected."
     )
 
     result = await validator.validate("User: Hello", empty_memory)
@@ -160,7 +187,12 @@ async def test_missing_memory(validator, mock_reviewer, empty_memory):
                 explanation="Omitted Google employment details.",
                 recommendation="Extract Google company entity."
             )
-        ]
+        ],
+        extraction_quality=0.9,
+        grounded_memories=5,
+        unsupported_memories=0,
+        missing_memories=1,
+        reviewer_summary="Omitted details."
     )
 
     result = await validator.validate("User: Hello", empty_memory)
@@ -238,7 +270,14 @@ async def test_litellm_reviewer_missing_api_key(empty_memory):
 @patch("litellm.acompletion")
 async def test_litellm_reviewer_success(mock_acompletion, empty_memory):
     mock_choice = MagicMock()
-    mock_choice.message.parsed = SemanticReview(findings=[])
+    mock_choice.message.parsed = SemanticReview(
+        findings=[],
+        extraction_quality=1.0,
+        grounded_memories=0,
+        unsupported_memories=0,
+        missing_memories=0,
+        reviewer_summary="OK"
+    )
     
     mock_response = MagicMock()
     mock_response.choices = [mock_choice]

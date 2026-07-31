@@ -36,3 +36,28 @@ class SemanticReview(BaseModel):
         default_factory=list,
         description="List of review findings comparing the conversation to the extracted MemoryIR."
     )
+    extraction_quality: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Overall quality of extraction from 0.0 (worst) to 1.0 (perfect)."
+    )
+    grounded_memories: int = Field(
+        ...,
+        ge=0,
+        description="Number of memories extracted that are correctly grounded in the conversation."
+    )
+    unsupported_memories: int = Field(
+        ...,
+        ge=0,
+        description="Number of extracted memories that are unsupported by the conversation."
+    )
+    missing_memories: int = Field(
+        ...,
+        ge=0,
+        description="Number of important memories missed during extraction."
+    )
+    summary: str = Field(
+        ...,
+        description="A concise narrative summary explaining the quality and issues in the extraction."
+    )
