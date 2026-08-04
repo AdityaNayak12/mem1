@@ -1,63 +1,95 @@
-from typing import Literal
+from enum import Enum
 from pydantic import BaseModel, Field
+
+# Re-use IssueLevel from structural validation models
+from app.validation.structural.models import IssueLevel
+
+
+class FindingType(str, Enum):
+    UNSUPPORTED_ENTITY = "UNSUPPORTED_ENTITY"
+    UNSUPPORTED_RELATIONSHIP = "UNSUPPORTED_RELATIONSHIP"
+    UNSUPPORTED_EVENT = "UNSUPPORTED_EVENT"
+    HALLUCINATION = "HALLUCINATION"
+    MISSING_MEMORY = "MISSING_MEMORY"
+
+
+class Recommendation(str, Enum):
+    KEEP = "KEEP"
+    REMOVE = "REMOVE"
+    MODIFY = "MODIFY"
+    ADD = "ADD"
+    REVIEW = "REVIEW"
 
 
 class ReviewFinding(BaseModel):
-    finding_type: Literal[
-        "unsupported_entity",
-        "unsupported_relationship",
-        "unsupported_event",
-        "hallucination",
-        "missing_memory",
-    ] = Field(
+    finding_type: FindingType = Field(
         ...,
-        description="The type of semantic validation finding."
+        description="The categorised type of the finding."
     )
-    severity: Literal["ERROR", "WARNING"] = Field(
+    severity: IssueLevel = Field(
         ...,
-        description="The severity level of the finding. Hallucinations and unsupported extractions should be ERROR. Missing memory should be WARNING."
+        description="The validation issue level severity."
     )
     location: str = Field(
         ...,
-        description="Location of the object being validated in standard format (e.g., 'entities[0]', 'relationships[3]', 'events[1]'). For missing_memory, specify a generic section or conversation context."
+        description="Location identifier (e.g., 'entities[0]', 'relationships[3]')."
+    )
+    confidence: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Confidence score for this finding, constrained between 0.0 and 1.0."
     )
     explanation: str = Field(
         ...,
-        description="Detailed explanation of why this finding is being reported, referencing the conversation."
+        description="Detailed explanation of the issue."
     )
-    recommendation: str = Field(
+    evidence: str = Field(
         ...,
-        description="Actionable recommendation on how to address this finding."
+        description="Evidence text snippet from the conversation backing this finding."
+    )
+    recommendation: Recommendation = Field(
+        ...,
+        description="Machine-readable action recommendation."
+    )
+    suggested_fix: str | None = Field(
+        None,
+        description="Optional text fix suggesting how to resolve the finding."
     )
 
 
 class SemanticReview(BaseModel):
     findings: list[ReviewFinding] = Field(
         default_factory=list,
-        description="List of review findings comparing the conversation to the extracted MemoryIR."
+        description="List of specific review findings."
+    )
+    total_memories: int = Field(
+        ...,
+        ge=0,
+        description="Total number of memories evaluated."
+    )
+    grounded_memories: int = Field(
+        ...,
+        ge=0,
+        description="Total number of correctly grounded memories."
+    )
+    unsupported_memories: int = Field(
+        ...,
+        ge=0,
+        description="Total number of unsupported memories."
+    )
+    missing_memories: int = Field(
+        ...,
+        ge=0,
+        description="Total number of missing memories."
     )
     extraction_quality: float = Field(
         ...,
         ge=0.0,
         le=1.0,
-        description="Overall quality of extraction from 0.0 (worst) to 1.0 (perfect)."
-    )
-    grounded_memories: int = Field(
-        ...,
-        ge=0,
-        description="Number of memories extracted that are correctly grounded in the conversation."
-    )
-    unsupported_memories: int = Field(
-        ...,
-        ge=0,
-        description="Number of extracted memories that are unsupported by the conversation."
-    )
-    missing_memories: int = Field(
-        ...,
-        ge=0,
-        description="Number of important memories missed during extraction."
+        description="Overall quality of extraction from 0.0 to 1.0."
     )
     summary: str = Field(
         ...,
-        description="A concise narrative summary explaining the quality and issues in the extraction."
+        description="Narrative summary describing the quality of the extraction."
     )

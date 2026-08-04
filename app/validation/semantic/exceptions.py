@@ -1,13 +1,13 @@
-class SemanticValidationError(Exception):
-    """Base exception for semantic validation failures."""
+class SemanticReviewError(Exception):
+    """Base exception for all semantic validation and review failures."""
     pass
 
 
-class ReviewerError(SemanticValidationError):
-    """Raised when the LLM reviewer experiences an API or provider failure."""
+class ReviewerTimeout(SemanticReviewError):
+    """Raised when the reviewer LLM request times out."""
     pass
 
 
-class InvalidReviewResponseError(SemanticValidationError):
-    """Raised when the LLM reviewer's output is malformed or invalid."""
+class InvalidReviewerResponse(SemanticReviewError):
+    """Raised when the reviewer LLM returns a malformed response or fails validation."""
     pass
