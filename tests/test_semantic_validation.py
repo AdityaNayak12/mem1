@@ -2,15 +2,18 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.schemas.memory_ir import MemoryIR
-from app.validation import IssueLevel
+from app.validation.structural.models import IssueLevel
 from app.validation.semantic import (
     SemanticValidator,
     MemoryReviewer,
     LiteLLMMemoryReviewer,
     SemanticReview,
     ReviewFinding,
-    ReviewerError,
-    InvalidReviewResponseError,
+    FindingType,
+    Recommendation,
+    SemanticReviewError,
+    ReviewerTimeout,
+    InvalidReviewerResponse,
 )
 
 
@@ -39,16 +42,25 @@ def empty_memory():
     return MemoryIR(entities=[], relationships=[], events=[])
 
 
+@pytest.fixture
+def base_review_stats():
+    """Helper to provide baseline statistics for SemanticReview models."""
+    return {
+        "total_memories": 5,
+        "grounded_memories": 5,
+        "unsupported_memories": 0,
+        "missing_memories": 0,
+        "extraction_quality": 1.0,
+        "summary": "Extraction is very good.",
+    }
+
+
 @pytest.mark.asyncio
-async def test_valid_memory(validator, mock_reviewer, empty_memory):
+async def test_supported_extraction(validator, mock_reviewer, empty_memory, base_review_stats):
     # Setup mock to return a review with no findings
     mock_reviewer.review_mock.return_value = SemanticReview(
         findings=[],
-        extraction_quality=1.0,
-        grounded_memories=0,
-        unsupported_memories=0,
-        missing_memories=0,
-        reviewer_summary="OK"
+        **base_review_stats
     )
 
     result = await validator.validate("User: Hello", empty_memory)
@@ -59,22 +71,25 @@ async def test_valid_memory(validator, mock_reviewer, empty_memory):
 
 
 @pytest.mark.asyncio
-async def test_unsupported_entity(validator, mock_reviewer, empty_memory):
+async def test_unsupported_entity(validator, mock_reviewer, empty_memory, base_review_stats):
+    stats = base_review_stats.copy()
+    stats["unsupported_memories"] = 1
+    stats["extraction_quality"] = 0.8
+
     mock_reviewer.review_mock.return_value = SemanticReview(
         findings=[
             ReviewFinding(
-                finding_type="unsupported_entity",
-                severity="ERROR",
+                finding_type=FindingType.UNSUPPORTED_ENTITY,
+                severity=IssueLevel.ERROR,
                 location="entities[0]",
-                explanation="Entity not mentioned.",
-                recommendation="Remove entity."
+                confidence=0.9,
+                explanation="Entity Bob was not mentioned.",
+                evidence="N/A",
+                recommendation=Recommendation.REMOVE,
+                suggested_fix="Delete entity Bob."
             )
         ],
-        extraction_quality=0.8,
-        grounded_memories=4,
-        unsupported_memories=1,
-        missing_memories=0,
-        reviewer_summary="Missing one entity context."
+        **stats
     )
 
     result = await validator.validate("User: Hello", empty_memory)
@@ -83,29 +98,34 @@ async def test_unsupported_entity(validator, mock_reviewer, empty_memory):
     assert len(result.issues) == 1
     issue = result.issues[0]
     assert issue.level == IssueLevel.ERROR
-    assert issue.code == "SEMANTIC_UNSUPPORTED_ENTITY"
+    assert issue.code == "ENTITY_NOT_GROUNDED"
     assert issue.location == "entities[0]"
-    assert "Entity not mentioned." in issue.message
-    assert "Remove entity." in issue.message
+    assert "Entity Bob was not mentioned." in issue.message
+    assert "Recommendation: REMOVE" in issue.message
+    assert "Suggested Fix: Delete entity Bob." in issue.message
+    assert "Reviewer Confidence: 0.90" in issue.message
 
 
 @pytest.mark.asyncio
-async def test_unsupported_relationship(validator, mock_reviewer, empty_memory):
+async def test_unsupported_relationship(validator, mock_reviewer, empty_memory, base_review_stats):
+    stats = base_review_stats.copy()
+    stats["unsupported_memories"] = 1
+    stats["extraction_quality"] = 0.8
+
     mock_reviewer.review_mock.return_value = SemanticReview(
         findings=[
             ReviewFinding(
-                finding_type="unsupported_relationship",
-                severity="ERROR",
+                finding_type=FindingType.UNSUPPORTED_RELATIONSHIP,
+                severity=IssueLevel.ERROR,
                 location="relationships[0]",
-                explanation="Relationship not direct.",
-                recommendation="Fix predicate."
+                confidence=0.85,
+                explanation="Alice doesn't work at Google.",
+                evidence="I work at Apple.",
+                recommendation=Recommendation.MODIFY,
+                suggested_fix="Change target to Apple."
             )
         ],
-        extraction_quality=0.8,
-        grounded_memories=4,
-        unsupported_memories=1,
-        missing_memories=0,
-        reviewer_summary="Unsupported relationship found."
+        **stats
     )
 
     result = await validator.validate("User: Hello", empty_memory)
@@ -114,27 +134,33 @@ async def test_unsupported_relationship(validator, mock_reviewer, empty_memory):
     assert len(result.issues) == 1
     issue = result.issues[0]
     assert issue.level == IssueLevel.ERROR
-    assert issue.code == "SEMANTIC_UNSUPPORTED_RELATIONSHIP"
+    assert issue.code == "RELATIONSHIP_NOT_GROUNDED"
     assert issue.location == "relationships[0]"
+    assert "Alice doesn't work at Google." in issue.message
+    assert "Recommendation: MODIFY" in issue.message
+    assert "Reviewer Confidence: 0.85" in issue.message
 
 
 @pytest.mark.asyncio
-async def test_unsupported_event(validator, mock_reviewer, empty_memory):
+async def test_unsupported_event(validator, mock_reviewer, empty_memory, base_review_stats):
+    stats = base_review_stats.copy()
+    stats["unsupported_memories"] = 1
+    stats["extraction_quality"] = 0.8
+
     mock_reviewer.review_mock.return_value = SemanticReview(
         findings=[
             ReviewFinding(
-                finding_type="unsupported_event",
-                severity="ERROR",
+                finding_type=FindingType.UNSUPPORTED_EVENT,
+                severity=IssueLevel.ERROR,
                 location="events[0]",
-                explanation="No such event.",
-                recommendation="Remove event."
+                confidence=0.95,
+                explanation="No acquisition took place.",
+                evidence="N/A",
+                recommendation=Recommendation.REMOVE,
+                suggested_fix="Remove event."
             )
         ],
-        extraction_quality=0.8,
-        grounded_memories=4,
-        unsupported_memories=1,
-        missing_memories=0,
-        reviewer_summary="Unsupported event found."
+        **stats
     )
 
     result = await validator.validate("User: Hello", empty_memory)
@@ -143,27 +169,30 @@ async def test_unsupported_event(validator, mock_reviewer, empty_memory):
     assert len(result.issues) == 1
     issue = result.issues[0]
     assert issue.level == IssueLevel.ERROR
-    assert issue.code == "SEMANTIC_UNSUPPORTED_EVENT"
+    assert issue.code == "EVENT_NOT_GROUNDED"
     assert issue.location == "events[0]"
 
 
 @pytest.mark.asyncio
-async def test_hallucination(validator, mock_reviewer, empty_memory):
+async def test_hallucination(validator, mock_reviewer, empty_memory, base_review_stats):
+    stats = base_review_stats.copy()
+    stats["unsupported_memories"] = 1
+    stats["extraction_quality"] = 0.8
+
     mock_reviewer.review_mock.return_value = SemanticReview(
         findings=[
             ReviewFinding(
-                finding_type="hallucination",
-                severity="ERROR",
+                finding_type=FindingType.HALLUCINATION,
+                severity=IssueLevel.ERROR,
                 location="entities[1]",
-                explanation="Invented info.",
-                recommendation="Remove hallucinated properties."
+                confidence=1.0,
+                explanation="Invented details about project status.",
+                evidence="N/A",
+                recommendation=Recommendation.REMOVE,
+                suggested_fix="Remove property status."
             )
         ],
-        extraction_quality=0.8,
-        grounded_memories=4,
-        unsupported_memories=1,
-        missing_memories=0,
-        reviewer_summary="Hallucination detected."
+        **stats
     )
 
     result = await validator.validate("User: Hello", empty_memory)
@@ -177,38 +206,41 @@ async def test_hallucination(validator, mock_reviewer, empty_memory):
 
 
 @pytest.mark.asyncio
-async def test_missing_memory(validator, mock_reviewer, empty_memory):
+async def test_missing_memory(validator, mock_reviewer, empty_memory, base_review_stats):
+    stats = base_review_stats.copy()
+    stats["missing_memories"] = 1
+    stats["extraction_quality"] = 0.9
+
     mock_reviewer.review_mock.return_value = SemanticReview(
         findings=[
             ReviewFinding(
-                finding_type="missing_memory",
-                severity="WARNING",
+                finding_type=FindingType.MISSING_MEMORY,
+                severity=IssueLevel.WARNING,
                 location="general",
-                explanation="Omitted Google employment details.",
-                recommendation="Extract Google company entity."
+                confidence=0.8,
+                explanation="Omitted Python programming language.",
+                evidence="I code in Python.",
+                recommendation=Recommendation.ADD,
+                suggested_fix="Add Python entity."
             )
         ],
-        extraction_quality=0.9,
-        grounded_memories=5,
-        unsupported_memories=0,
-        missing_memories=1,
-        reviewer_summary="Omitted details."
+        **stats
     )
 
     result = await validator.validate("User: Hello", empty_memory)
 
-    # Warnings alone must not invalidate the overall result
+    # Warning issues should keep result.valid as True
     assert result.valid is True
     assert len(result.issues) == 1
     issue = result.issues[0]
     assert issue.level == IssueLevel.WARNING
-    assert issue.code == "SEMANTIC_MISSING_MEMORY"
+    assert issue.code == "SEMANTIC_INCOMPLETE"
     assert issue.location == "general"
 
 
 @pytest.mark.asyncio
-async def test_malformed_review_exception(validator, mock_reviewer, empty_memory):
-    mock_reviewer.review_mock.side_effect = InvalidReviewResponseError("Malformed JSON structure")
+async def test_invalid_review_exception(validator, mock_reviewer, empty_memory):
+    mock_reviewer.review_mock.side_effect = InvalidReviewerResponse("Response missing findings list")
 
     result = await validator.validate("User: Hello", empty_memory)
 
@@ -216,13 +248,13 @@ async def test_malformed_review_exception(validator, mock_reviewer, empty_memory
     assert len(result.issues) == 1
     issue = result.issues[0]
     assert issue.level == IssueLevel.ERROR
-    assert issue.code == "SEMANTIC_REVIEW_FAILURE"
-    assert "Malformed JSON structure" in issue.message
+    assert issue.code == "SEMANTIC_INVALID_RESPONSE"
+    assert "Response missing findings list" in issue.message
 
 
 @pytest.mark.asyncio
 async def test_timeout_exception(validator, mock_reviewer, empty_memory):
-    mock_reviewer.review_mock.side_effect = ReviewerError("LLM call timed out")
+    mock_reviewer.review_mock.side_effect = ReviewerTimeout("LLM request timed out after 30s")
 
     result = await validator.validate("User: Hello", empty_memory)
 
@@ -230,13 +262,13 @@ async def test_timeout_exception(validator, mock_reviewer, empty_memory):
     assert len(result.issues) == 1
     issue = result.issues[0]
     assert issue.level == IssueLevel.ERROR
-    assert issue.code == "SEMANTIC_REVIEW_FAILURE"
-    assert "LLM call timed out" in issue.message
+    assert issue.code == "SEMANTIC_TIMEOUT"
+    assert "LLM request timed out" in issue.message
 
 
 @pytest.mark.asyncio
 async def test_provider_failure_exception(validator, mock_reviewer, empty_memory):
-    mock_reviewer.review_mock.side_effect = ReviewerError("API connection failure")
+    mock_reviewer.review_mock.side_effect = SemanticReviewError("API connection failure")
 
     result = await validator.validate("User: Hello", empty_memory)
 
@@ -245,7 +277,7 @@ async def test_provider_failure_exception(validator, mock_reviewer, empty_memory
     issue = result.issues[0]
     assert issue.level == IssueLevel.ERROR
     assert issue.code == "SEMANTIC_REVIEW_FAILURE"
-    assert "API connection failure" in issue.message
+    assert "Semantic reviewer failure occurred" in issue.message
 
 
 # --- LiteLLMMemoryReviewer Specific Tests ---
@@ -261,22 +293,18 @@ def test_litellm_reviewer_initialization():
 async def test_litellm_reviewer_missing_api_key(empty_memory):
     reviewer = LiteLLMMemoryReviewer(model="openrouter/google/gemini-2.5-flash-lite")
     with patch.dict("os.environ", {}, clear=True):
-        with pytest.raises(ReviewerError) as exc_info:
+        with pytest.raises(SemanticReviewError) as exc_info:
             await reviewer.review("User: Hello", empty_memory)
         assert "Missing OPENROUTER_API_KEY" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
 @patch("litellm.acompletion")
-async def test_litellm_reviewer_success(mock_acompletion, empty_memory):
+async def test_litellm_reviewer_success(mock_acompletion, empty_memory, base_review_stats):
     mock_choice = MagicMock()
     mock_choice.message.parsed = SemanticReview(
         findings=[],
-        extraction_quality=1.0,
-        grounded_memories=0,
-        unsupported_memories=0,
-        missing_memories=0,
-        reviewer_summary="OK"
+        **base_review_stats
     )
     
     mock_response = MagicMock()
@@ -289,6 +317,7 @@ async def test_litellm_reviewer_success(mock_acompletion, empty_memory):
 
     assert isinstance(result, SemanticReview)
     assert len(result.findings) == 0
+    assert result.extraction_quality == 1.0
 
 
 @pytest.mark.asyncio
@@ -301,7 +330,7 @@ async def test_litellm_reviewer_timeout_handling(mock_acompletion, empty_memory)
 
     reviewer = LiteLLMMemoryReviewer(model="openai/gpt-4")
     with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-dummy"}):
-        with pytest.raises(ReviewerError) as exc_info:
+        with pytest.raises(ReviewerTimeout) as exc_info:
             await reviewer.review("User: Hello", empty_memory)
     assert "LiteLLM reviewer timed out" in str(exc_info.value)
 
@@ -316,6 +345,6 @@ async def test_litellm_reviewer_auth_error_handling(mock_acompletion, empty_memo
 
     reviewer = LiteLLMMemoryReviewer(model="openai/gpt-4")
     with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-dummy"}):
-        with pytest.raises(ReviewerError) as exc_info:
+        with pytest.raises(SemanticReviewError) as exc_info:
             await reviewer.review("User: Hello", empty_memory)
     assert "Authentication failed with reviewer" in str(exc_info.value)
