@@ -1,10 +1,10 @@
 from app.validation.semantic.validator import SemanticValidator
 from app.validation.semantic.reviewer import MemoryReviewer, LiteLLMMemoryReviewer
-from app.validation.semantic.models import SemanticReview, ReviewFinding
+from app.validation.semantic.models import SemanticReview, ReviewFinding, FindingType, Recommendation
 from app.validation.semantic.exceptions import (
-    SemanticValidationError,
-    ReviewerError,
-    InvalidReviewResponseError,
+    SemanticReviewError,
+    ReviewerTimeout,
+    InvalidReviewerResponse,
 )
 
 __all__ = [
@@ -13,7 +13,9 @@ __all__ = [
     "LiteLLMMemoryReviewer",
     "SemanticReview",
     "ReviewFinding",
-    "SemanticValidationError",
-    "ReviewerError",
-    "InvalidReviewResponseError",
+    "FindingType",
+    "Recommendation",
+    "SemanticReviewError",
+    "ReviewerTimeout",
+    "InvalidReviewerResponse",
 ]
